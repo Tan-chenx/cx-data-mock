@@ -1,0 +1,12 @@
+server:
+  port: 7001
+
+spring:
+  datasource:
+    password: admin123
+    url: "jdbc:mysql://localhost:3306/mydatabase"
+    username: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+mybatis:
+  mapper-locations: "classpath:mapper/*.xml"
+  type-aliases-package: "com.example.common.entity"
