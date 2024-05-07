@@ -1,15 +1,24 @@
 package com.cx.data.mock.parse;
 
-import com.cx.data.mock.bean.ColumnBo;
-import com.cx.data.mock.bean.CreateTableBo;
-import com.cx.data.mock.exception.SqlParseException;
+import com.cx.data.mock.constan.SqlKeyWords;
+import com.cx.data.mock.exception.SqlBuildException;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.jsqlparser.JSQLParserException;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.schema.Table;
+import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.create.table.ColumnDefinition;
+import net.sf.jsqlparser.statement.create.table.CreateTable;
+import org.apache.commons.lang3.RandomStringUtils;
 
-import java.util.ArrayList;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
-import static com.cx.data.mock.constan.CharConstant.*;
-import static com.cx.data.mock.constan.SqlKeyWords.CREATE_TABLE;
+import static com.cx.data.mock.constan.CharConstant.BLANK;
+import static com.cx.data.mock.constan.CharConstant.LEFT_BRACKET;
+import static com.cx.data.mock.constan.CharConstant.SINGLE_QUOTE;
+
 
 /**
  * @author chenx
@@ -18,59 +27,122 @@ import static com.cx.data.mock.constan.SqlKeyWords.CREATE_TABLE;
 @Slf4j
 public class SqlParse {
 
-    /**
-     * 根据sql语句解析出表名和字段名
-     */
-    public void parseSql(String sql) {
-        String formatSql = formatSql(sql);
-        if (!formatSql.startsWith(CREATE_TABLE)) {
-            throw new SqlParseException("sql not a create table sql!");
+    public static String SqlParse(String sql) {
+        String result = null;
+        Statement statement = null;
+        try {
+            statement = CCJSqlParserUtil.parse(sql);
+        } catch (JSQLParserException e) {
+            log.error("sql解析异常", e);
         }
-        CreateTableBo createTableBo = new CreateTableBo();
-        // 获取表名
-        String tableName = formatSql.substring(formatSql.indexOf(CREATE_TABLE) + CREATE_TABLE.length(), formatSql.indexOf("("));
-        createTableBo.setTableName(tableName);
-        List<ColumnBo> columns =new ArrayList<>();
-        // 获取字段名
-        String fields = formatSql.substring(formatSql.indexOf(LEFT_BRACKET) + 1, formatSql.lastIndexOf(RIGHT_BRACKET));
-        // 解析字段名
-        String[] fieldArray = fields.split(COMMA);
-        for (String field : fieldArray) {
-            // 获取字段名和字段类型
-            String[] fieldInfo = field.trim().split("\\s+");
-            ColumnBo column = new ColumnBo();
-            //这两个类型是必须指定
-            column.setColumnName(fieldInfo[0]);
-            String filedType = fieldInfo[1];
-            if (filedType.endsWith(RIGHT_BRACKET)) {
-                //指定了数据长度
-                column.setColumnType(filedType.substring(0, filedType.indexOf(RIGHT_BRACKET)));
-                column.setColumnSize(Integer.valueOf(filedType.substring(filedType.indexOf(LEFT_BRACKET) + 1, filedType.indexOf(RIGHT_BRACKET))));
-            } else {
-                column.setColumnType(filedType);
-            }
-            columns.add(column);
+        // 获取操作类型，例如 Create
+        if (statement instanceof CreateTable) {
+            buildInsertSql((CreateTable) statement);
         }
-        createTableBo.setColumns(columns);
-
-        log.info("{}",createTableBo);
+        return result;
     }
 
-
     /**
-     * @description: 格式化Sql
-     * @param: sql
-     * @return: String
-     * @author chenx
-     * @date: 2024/4/29 21:29
+     * 构建insert语句
+     *
+     * @param statement
      */
-    public String formatSql(String sql) {
-        //转小写
-        sql = sql.toLowerCase();
-        //去除头部和尾部的空格
-        sql = sql.trim();
-        //去除中间多余的空格
-        return sql.replaceAll("\\s+", " ");
+    private static void buildInsertSql(CreateTable statement) {
+        CreateTable createTable = statement;
+        Table table = createTable.getTable();
+        String tableName = table.getName();
+        // 构建insert语句
+        StringBuilder insertSql = new StringBuilder(SqlKeyWords.INSERT_PRX);
+        insertSql.append(tableName).append(LEFT_BRACKET);
+        List<ColumnDefinition> columnDefinitions = createTable.getColumnDefinitions();
+        // 列定义
+        StringBuilder columns = new StringBuilder();
+        StringBuilder values = new StringBuilder();
+        for (ColumnDefinition column : columnDefinitions) {
+            if (columns.length() > 0) {
+                columns.append(", ");
+                values.append(", ");
+            }
+            // 列名
+            String columnName = column.getColumnName();
+            columns.append(columnName);
+            // 根据数据类型生成随机值
+            String dataType = column.getColDataType().getDataType();
+            List<String> argumentsStringList = column.getColDataType().getArgumentsStringList();
+            List<Integer> arrayData = column.getColDataType().getArrayData();
+            try {
+                //TODO 根据字段自增属性值进行随机值生成
+                values.append(generateRandomValue(dataType, argumentsStringList));
+            } catch (SqlBuildException e) {
+                throw new SqlBuildException("列：" + columnName + " 生成值失败:" + e.getMessage());
+            }
+        }
+        insertSql.append(columns).append(") VALUES (").append(values).append(");");
+        log.info("{}", insertSql);
+    }
+
+    private static String generateRandomValue(String dataType, List<String> argumentsStringList) throws SqlBuildException {
+        log.info("数据类型:{},参数：{}", dataType, argumentsStringList);
+        int length;
+        switch (dataType.toLowerCase()) {
+            case "char":
+            case "blob":
+            case "varchar":
+            case "text":
+            case "json":
+            case "tinytext":
+            case "mediumtext":
+            case "longtext":
+            case "enum":
+            case "set":
+                length = argumentsStringList != null && !argumentsStringList.isEmpty() ? Integer.parseInt(argumentsStringList.get(0)) : 10;
+                return SINGLE_QUOTE + RandomStringUtils.randomAlphabetic(length) + SINGLE_QUOTE;
+            case "tinyint":
+                int tinyintLength = argumentsStringList != null && !argumentsStringList.isEmpty() ? Integer.parseInt(argumentsStringList.get(0)) : 2;
+                return RandomStringUtils.randomNumeric(tinyintLength);
+            case "bigint":
+            case "int":
+            case "integer":
+                length = argumentsStringList != null && !argumentsStringList.isEmpty() ? Integer.parseInt(argumentsStringList.get(0)) : 10;
+                return RandomStringUtils.randomNumeric(length);
+            case "decimal":
+                /*
+                    decimal(m,d):
+                    m是数字的最大位数，他的范围是从1-65
+                    d是小数点后的位数，他的范围是0-30，并且不能大于m
+                    如果m被省略了，那么m的值默认为10，
+                    如果d被省略了，那么d的值默认为0.
+                    最大数长度为m-d,d为小数
+                 */
+                if (argumentsStringList == null || argumentsStringList.isEmpty()) {
+                    length = 10;
+                    return RandomStringUtils.randomNumeric(length);
+                } else if (argumentsStringList.size() == 1) {
+                    return RandomStringUtils.randomNumeric(Integer.parseInt(argumentsStringList.get(0)));
+                } else if (argumentsStringList.size() == 2) {
+                    int m = Integer.parseInt(argumentsStringList.get(0));
+                    int d = Integer.parseInt(argumentsStringList.get(1));
+                    if (m > d)
+                        return RandomStringUtils.randomNumeric(m - d)
+                                + "." + RandomStringUtils.randomNumeric(d);
+                } else {
+                    throw new SqlBuildException("decimal参数错误");
+                }
+
+            case "datetime":
+                return SINGLE_QUOTE + LocalDate.now() + BLANK + LocalTime.now() + SINGLE_QUOTE;
+
+            case "date":
+                return SINGLE_QUOTE + LocalDate.now() + SINGLE_QUOTE;
+
+            case "time":
+                return SINGLE_QUOTE + LocalTime.now() + SINGLE_QUOTE;
+
+            default:
+                return SINGLE_QUOTE + "unknown" + SINGLE_QUOTE;
+
+        }
+
     }
 
 }

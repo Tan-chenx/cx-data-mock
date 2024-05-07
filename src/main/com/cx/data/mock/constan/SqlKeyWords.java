@@ -11,6 +11,7 @@ public class SqlKeyWords {
     public static final String INSERT = "insert";
     public static final String UPDATE = "update";
     public static final String DELETE = "delete";
+    public static final String VALUES = "values";
     public static final String FROM = "from";
     public static final String WHERE = "where";
     public static final String AND = "and";
@@ -20,7 +21,9 @@ public class SqlKeyWords {
     public static final String BETWEEN = "between";
     public static final String NOT_BETWEEN = "not between";
     public static final String TABLE = "table";
-    public static final String CREATE_TABLE = CREATE+CharConstant.BLANK+TABLE;
+    public static final String INTO = "into";
+    public static final String CREATE_PRX= "create table ";
+    public static final String INSERT_PRX = "insert into ";
 
 
 }
