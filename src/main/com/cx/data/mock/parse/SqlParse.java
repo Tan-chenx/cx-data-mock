@@ -18,6 +18,7 @@ import java.util.List;
 import static com.cx.data.mock.constan.CharConstant.BLANK;
 import static com.cx.data.mock.constan.CharConstant.LEFT_BRACKET;
 import static com.cx.data.mock.constan.CharConstant.SINGLE_QUOTE;
+import static com.cx.data.mock.constan.SourceConstant.JSON_OBJECT;
 
 
 /**
@@ -27,17 +28,18 @@ import static com.cx.data.mock.constan.CharConstant.SINGLE_QUOTE;
 @Slf4j
 public class SqlParse {
 
-    public static String SqlParse(String sql) {
+    public String SqlParse(String sql) {
         String result = null;
-        Statement statement = null;
+        Statement statement;
         try {
             statement = CCJSqlParserUtil.parse(sql);
         } catch (JSQLParserException e) {
             log.error("sql解析异常", e);
+            throw new SqlBuildException("sql解析异常:"+e.getMessage());
         }
         // 获取操作类型，例如 Create
         if (statement instanceof CreateTable) {
-            buildInsertSql((CreateTable) statement);
+            result = buildInsertSql((CreateTable) statement);
         }
         return result;
     }
@@ -47,7 +49,7 @@ public class SqlParse {
      *
      * @param statement
      */
-    private static void buildInsertSql(CreateTable statement) {
+    private String buildInsertSql(CreateTable statement) {
         CreateTable createTable = statement;
         Table table = createTable.getTable();
         String tableName = table.getName();
@@ -79,6 +81,7 @@ public class SqlParse {
         }
         insertSql.append(columns).append(") VALUES (").append(values).append(");");
         log.info("{}", insertSql);
+        return insertSql.toString();
     }
 
     private static String generateRandomValue(String dataType, List<String> argumentsStringList) throws SqlBuildException {
@@ -89,7 +92,6 @@ public class SqlParse {
             case "blob":
             case "varchar":
             case "text":
-            case "json":
             case "tinytext":
             case "mediumtext":
             case "longtext":
@@ -97,6 +99,8 @@ public class SqlParse {
             case "set":
                 length = argumentsStringList != null && !argumentsStringList.isEmpty() ? Integer.parseInt(argumentsStringList.get(0)) : 10;
                 return SINGLE_QUOTE + RandomStringUtils.randomAlphabetic(length) + SINGLE_QUOTE;
+            case "json":
+                return SINGLE_QUOTE + JSON_OBJECT+ SINGLE_QUOTE;
             case "tinyint":
                 int tinyintLength = argumentsStringList != null && !argumentsStringList.isEmpty() ? Integer.parseInt(argumentsStringList.get(0)) : 2;
                 return RandomStringUtils.randomNumeric(tinyintLength);
@@ -122,11 +126,18 @@ public class SqlParse {
                 } else if (argumentsStringList.size() == 2) {
                     int m = Integer.parseInt(argumentsStringList.get(0));
                     int d = Integer.parseInt(argumentsStringList.get(1));
-                    if (m > d)
+                    if (m > d){
                         return RandomStringUtils.randomNumeric(m - d)
                                 + "." + RandomStringUtils.randomNumeric(d);
+                    }else {
+                        String errorMsg = "decimal参数错误,最大位数" + m + "不能小于小数点后的位数" + d;
+                        log.error(errorMsg);
+                        throw new SqlBuildException(errorMsg);
+                    }
                 } else {
-                    throw new SqlBuildException("decimal参数错误");
+                    String errorMsg = "decimal参数错误";
+                    log.error(errorMsg);
+                    throw new SqlBuildException(errorMsg);
                 }
 
             case "datetime":
